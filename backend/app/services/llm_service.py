@@ -1,36 +1,38 @@
 """
-llm_service.py — LLM backend using Google Gemini API.
+llm_service.py — LLM backend using Google Gemini API (google-genai SDK ≥1.0.0).
 
 All heavy imports are lazy so the module is safe to import at startup
-without consuming memory — models initialize on first API call only.
+without consuming memory — client initialises on first API call only.
 """
 
 import os
 import json
 import re
 
-# ── Lazy Gemini setup ──────────────────────────────────────────────────────────
-# Nothing loads at module import time. _get_model() initializes on first call.
-_model = None
+# ── Lazy Gemini client setup ───────────────────────────────────────────────────
+# Nothing loads at module import time. _get_client() initialises on first call.
+_client = None
 
-def _get_model():
-    global _model
-    if _model is None:
-        import google.generativeai as genai
+def _get_client():
+    global _client
+    if _client is None:
+        from google import genai
         key = os.getenv("GEMINI_API_KEY", "")
         if not key:
             raise RuntimeError("GEMINI_API_KEY environment variable is not set.")
-        genai.configure(api_key=key)
-        _model = genai.GenerativeModel("gemini-1.5-flash")
-    return _model
+        _client = genai.Client(api_key=key)
+    return _client
 
 
 def _gemini(prompt: str) -> str:
     """Send a single-turn prompt to Gemini and return the text response."""
     try:
-        model = _get_model()
-        resp = model.generate_content(prompt)
-        return resp.text.strip()
+        client = _get_client()
+        response = client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=prompt,
+        )
+        return response.text.strip()
     except Exception as e:
         return f"Gemini Error: {str(e)}"
 
@@ -169,22 +171,35 @@ def chat_viva(topic: str, message_history: list) -> str:
         "6. Every response MUST end with exactly one question."
     )
 
+    if not message_history:
+        return _gemini(system_prompt + "\n\nBegin the viva.")
+
+    # Build history in google-genai dict format
     history = []
     for msg in message_history:
         role = "user" if msg["role"] == "user" else "model"
-        history.append({"role": role, "parts": [msg["content"]]})
+        history.append({"role": role, "parts": [{"text": msg["content"]}]})
 
-    if not history:
-        history = [{"role": "user", "parts": [system_prompt + "\n\nBegin the viva."]}]
+    # Inject system prompt into the first user message
+    if history:
+        history[0]["parts"][0]["text"] = system_prompt + "\n\n" + history[0]["parts"][0]["text"]
+
+    # Split into history (all but last) and last message
+    if len(history) > 1:
+        chat_history = history[:-1]
+        last_msg = history[-1]["parts"][0]["text"]
     else:
-        history[0]["parts"][0] = system_prompt + "\n\n" + history[0]["parts"][0]
+        # Only one message — send directly
+        return _gemini(history[0]["parts"][0]["text"])
 
     try:
-        model = _get_model()
-        chat = model.start_chat(history=history[:-1] if len(history) > 1 else [])
-        last_msg = history[-1]["parts"][0] if history else "Begin."
-        resp = chat.send_message(last_msg)
-        return resp.text.strip()
+        client = _get_client()
+        chat = client.chats.create(
+            model="gemini-1.5-flash",
+            history=chat_history,
+        )
+        response = chat.send_message(last_msg)
+        return response.text.strip()
     except Exception as e:
         return f"Gemini Error: {str(e)}"
 

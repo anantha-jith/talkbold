@@ -1,6 +1,10 @@
-import os
+"""
+ml_domain_service.py — Domain alignment check using Gemini embeddings.
+Uses google-genai SDK (same shared client as llm_service).
+"""
 
 import math
+
 
 def check_domain_alignment(topic: str, script: str, ppt_context: str):
     """
@@ -8,14 +12,10 @@ def check_domain_alignment(topic: str, script: str, ppt_context: str):
     between the inputs. Uses Gemini API to detect if the user
     is inputting a script completely unrelated to the PPT.
     """
-    import google.generativeai as genai
-    import os
-    genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
-
     # We take a sample of the script and ppt to speed up embedding and avoid token limits
     script_sample = script[:2000] if script else ""
     ppt_sample = ppt_context[:2000] if ppt_context else ""
-    
+
     if not script_sample or not ppt_sample:
         return {"error": "Missing script or PPT content to compare"}
 
@@ -28,35 +28,33 @@ def check_domain_alignment(topic: str, script: str, ppt_context: str):
         return dot_product / (magnitude_v1 * magnitude_v2)
 
     try:
-        # Compute embeddings via Gemini API (uses zero local memory)
-        response = genai.embed_content(
-            model="models/text-embedding-004",
-            content=[topic, script_sample, ppt_sample]
+        from app.services.llm_service import _get_client
+        client = _get_client()
+
+        # Batch embed all three texts in one API call (zero local memory)
+        result = client.models.embed_content(
+            model="text-embedding-004",
+            contents=[topic, script_sample, ppt_sample],
         )
-        
-        embeddings = response["embedding"]
-        topic_emb = embeddings[0]
+
+        # Extract float vectors from the response
+        embeddings = [e.values for e in result.embeddings]
+        topic_emb  = embeddings[0]
         script_emb = embeddings[1]
-        ppt_emb = embeddings[2]
-        
-        # Calculate Cosine Similarities
-        # 1. How well does the script match the PPT?
+        ppt_emb    = embeddings[2]
+
+        # Calculate cosine similarities
         script_ppt_sim = cosine_similarity(script_emb, ppt_emb)
-        
-        # 2. How well does the topic match the PPT?
-        topic_ppt_sim = cosine_similarity(topic_emb, ppt_emb)
+        topic_ppt_sim  = cosine_similarity(topic_emb, ppt_emb)
+
     except Exception as e:
         print(f"[ML Domain Check Error] {e}")
         return {}
 
     warnings = []
-    
-    # Threshold tuning for all-MiniLM-L6-v2: 
-    # To differentiate between two Computer Science topics (like Compilers vs Networks),
-    # the threshold must be strict because they share a lot of common vocabulary.
-    
+
     is_script_mismatched = script_ppt_sim < 0.40
-    is_topic_mismatched = topic_ppt_sim < 0.25
+    is_topic_mismatched  = topic_ppt_sim  < 0.25
 
     if is_script_mismatched:
         warnings.append(
@@ -64,7 +62,7 @@ def check_domain_alignment(topic: str, script: str, ppt_context: str):
             "does not match the domain of the uploaded PPT. (E.g., You pasted a script for "
             "a different subject than the PPT you uploaded). The AI will likely heavily penalize this."
         )
-        
+
     if is_topic_mismatched:
         warnings.append(
             f"WARNING: The provided topic '{topic}' does not seem to accurately match the actual content found in the PPT."
@@ -72,8 +70,8 @@ def check_domain_alignment(topic: str, script: str, ppt_context: str):
 
     return {
         "script_ppt_similarity": script_ppt_sim,
-        "topic_ppt_similarity": topic_ppt_sim,
-        "is_script_mismatched": is_script_mismatched,
-        "is_topic_mismatched": is_topic_mismatched,
-        "warnings": warnings
+        "topic_ppt_similarity":  topic_ppt_sim,
+        "is_script_mismatched":  is_script_mismatched,
+        "is_topic_mismatched":   is_topic_mismatched,
+        "warnings":              warnings,
     }

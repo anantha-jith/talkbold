@@ -633,60 +633,101 @@ def score_confidence(text: str, duration_seconds: float = None) -> dict:
 
 
 # ══════════════════════════════════════════════════════════════
-# WHISPER TRANSCRIPTION
+# GEMINI TRANSCRIPTION  (replaces openai-whisper — zero local RAM)
 # ══════════════════════════════════════════════════════════════
 
 def transcribe_with_whisper(audio_path: str) -> dict:
-    """Try openai-whisper first, fall back to faster-whisper."""
+    """
+    Transcribe audio using the Gemini Files API.
+    Named 'transcribe_with_whisper' for backward compatibility.
+    Uses zero local RAM — all computation happens on Google's servers.
+    """
     try:
-        import whisper
-        model    = whisper.load_model("tiny")
-        result   = model.transcribe(audio_path, task="transcribe", language=None)  # auto-detect language
-        text     = result.get("text", "").strip()
-        segments = result.get("segments", [])
-        duration = segments[-1].get("end") if segments else None
-        detected_lang = result.get("language", "unknown")
-        # Build segment list with language. openai-whisper doesn't per-seg lang by default,
-        # but we can use avg_logprob to flag very uncertain segments as potentially mixed.
-        seg_list = []
-        for seg in segments:
-            seg_list.append({
-                "text":     seg.get("text", ""),
-                "language": detected_lang,  # openai-whisper detects at file level
-                "avg_logprob": seg.get("avg_logprob", 0),
-            })
-        return {
-            "success": True,
-            "transcription": text,
-            "duration_seconds": duration,
-            "language": detected_lang,
-            "segments": seg_list,
-        }
-    except ImportError:
-        pass
-    except Exception as e:
-        return {"success": False, "transcription": "", "error": f"openai-whisper: {str(e)}"}
+        from app.services.llm_service import _get_client
+        from google.genai import types
 
-    try:
-        from faster_whisper import WhisperModel
-        model      = WhisperModel("tiny", device="cpu", compute_type="int8")
-        segs, info = model.transcribe(audio_path, beam_size=5, language=None, vad_filter=True)
-        seg_objects = list(segs)  # consume generator
-        text       = " ".join(s.text.strip() for s in seg_objects)
-        detected_lang = getattr(info, "language", "unknown")
-        # faster-whisper provides language per segment via info.language_probability
-        seg_list = [{
-            "text":     s.text.strip(),
-            "language": detected_lang,
-            "avg_logprob": getattr(s, "avg_logprob", 0),
-        } for s in seg_objects]
-        return {
-            "success": True,
-            "transcription": text,
-            "duration_seconds": getattr(info, "duration", None),
-            "language": detected_lang,
-            "segments": seg_list,
+        client = _get_client()
+
+        # Map file extension to MIME type
+        ext = audio_path.rsplit(".", 1)[-1].lower() if "." in audio_path else "webm"
+        mime_map = {
+            "webm": "audio/webm",
+            "mp3":  "audio/mpeg",
+            "wav":  "audio/wav",
+            "m4a":  "audio/mp4",
+            "mp4":  "audio/mp4",
+            "ogg":  "audio/ogg",
+            "flac": "audio/flac",
+            "aac":  "audio/aac",
         }
+        mime_type = mime_map.get(ext, "audio/webm")
+
+        # Upload audio file to Gemini Files API
+        uploaded = client.files.upload(
+            path=audio_path,
+            config={"mime_type": mime_type},
+        )
+
+        # Ask Gemini to transcribe + detect language
+        response = client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=[
+                types.Content(parts=[
+                    types.Part(
+                        file_data=types.FileData(
+                            file_uri=uploaded.uri,
+                            mime_type=uploaded.mime_type,
+                        )
+                    ),
+                    types.Part(text=(
+                        "Transcribe this audio recording exactly as spoken.\n"
+                        "Respond with ONLY this exact format, nothing else:\n"
+                        "LANG: [2-letter ISO language code, e.g. en, ta, hi, zh, fr]\n"
+                        "TEXT: [complete verbatim transcription on one line]"
+                    )),
+                ])
+            ],
+        )
+
+        # Clean up uploaded file from Google's servers
+        try:
+            client.files.delete(uploaded.name)
+        except Exception:
+            pass
+
+        raw = (response.text or "").strip()
+
+        # Parse LANG and TEXT from the structured response
+        lang = "en"
+        transcription = ""
+
+        for line in raw.split("\n"):
+            line = line.strip()
+            if line.startswith("LANG:"):
+                lang = line.split(":", 1)[1].strip().lower()[:2]
+            elif line.startswith("TEXT:"):
+                transcription = line.split(":", 1)[1].strip()
+
+        # Fallback: if parsing failed, treat entire response as transcription
+        if not transcription:
+            transcription = "\n".join(
+                l for l in raw.split("\n")
+                if not l.startswith("LANG:") and l.strip()
+            ).strip()
+
+        # Estimate duration from word count (Gemini doesn't provide timestamps)
+        word_count = len(transcription.split())
+        estimated_duration = (word_count / 130.0) * 60 if word_count > 0 else None
+
+        return {
+            "success":          True,
+            "transcription":    transcription,
+            "duration_seconds": estimated_duration,
+            "language":         lang,
+            "segments":         [],   # Gemini returns no segments — file-level lang check only
+        }
+
     except Exception as e:
-        return {"success": False, "transcription": "", "error": f"Whisper error: {str(e)}"}
+        print(f"[Gemini Transcription Error] {e}")
+        return {"success": False, "transcription": "", "error": f"Transcription error: {str(e)}"}
 
