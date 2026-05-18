@@ -29,7 +29,7 @@ def _gemini(prompt: str) -> str:
     try:
         client = _get_client()
         response = client.models.generate_content(
-            model="gemini-1.5-flash",
+            model="gemini-2.0-flash",
             contents=prompt,
         )
         return response.text.strip()
@@ -195,7 +195,7 @@ def chat_viva(topic: str, message_history: list) -> str:
     try:
         client = _get_client()
         chat = client.chats.create(
-            model="gemini-1.5-flash",
+            model="gemini-2.0-flash",
             history=chat_history,
         )
         response = chat.send_message(last_msg)

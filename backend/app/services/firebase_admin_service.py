@@ -34,6 +34,8 @@ def _init():
     if env_b64:
         import base64
         try:
+            # Fix base64 padding if missing
+            env_b64 += "=" * ((4 - len(env_b64) % 4) % 4)
             decoded = base64.b64decode(env_b64).decode("utf-8")
             data = json.loads(decoded)
             cred = credentials.Certificate(data)
