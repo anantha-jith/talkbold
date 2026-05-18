@@ -33,7 +33,7 @@ def check_domain_alignment(topic: str, script: str, ppt_context: str):
 
         # Batch embed all three texts in one API call (zero local memory)
         result = client.models.embed_content(
-            model="text-embedding-004",
+            model="gemini-embedding-2",
             contents=[topic, script_sample, ppt_sample],
         )
 
