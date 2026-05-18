@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.env
+uploads/
+chroma_db/
+node_modules/
+.DS_Store
+*.egg-info/
+dist/
+venv/
+*.pem
+certs/
+firebase-admin.json

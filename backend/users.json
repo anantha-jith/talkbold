@@ -1,0 +1,23 @@
+{
+  "ananthajith4389@gmail.comk": {
+    "email": "ananthajith4389@gmail.comk",
+    "password": "$2b$12$3.gmfLyQ7aycvWbciT0z3OwkINUUqL8WVRN44Sc6kRVglcJrJCIdW",
+    "verified": false,
+    "role": "user",
+    "created": 1778961741
+  },
+  "dreampc100@gmail.com": {
+    "email": "dreampc100@gmail.com",
+    "password": "$2b$12$evPxEOxu9vtVWttS.KD4q.tTkYYDW3sAzf6jl0L.Jr26s6Wj9cO/a",
+    "verified": false,
+    "role": "user",
+    "created": 1778961831
+  },
+  "ananthajith4389@gmail.com": {
+    "email": "ananthajith4389@gmail.com",
+    "password": "$2b$12$Yq08ZTTLeMN2bUJw3DpnB.ccqx/cSz6vIXPENgDf2ocO99HPL8BGa",
+    "verified": true,
+    "role": "user",
+    "created": 1778962119
+  }
+}

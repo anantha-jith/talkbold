@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-border: hsl(var(--border));
+  --radius: 0.75rem;
+}
+
+@layer base {
+  :root {
+    --background: 230 50% 2%; 
+    --foreground: 0 0% 100%;
+    --card: 230 40% 5%;
+    --card-foreground: 0 0% 100%;
+    --primary: 185 100% 50%;
+    --primary-foreground: 230 50% 2%;
+    --muted: 230 30% 12%;
+    --muted-foreground: 0 0% 100%;
+    --border: 185 100% 50% / 0.15;
+  }
+
+  .dark {
+    --background: 230 50% 2%; 
+    --foreground: 0 0% 100%;
+    --card: 230 40% 5%;
+    --card-foreground: 0 0% 100%;
+    --primary: 185 100% 50%;
+    --primary-foreground: 230 50% 2%;
+    --muted: 230 30% 12%;
+    --muted-foreground: 0 0% 100%;
+    --border: 185 100% 50% / 0.15;
+  }
+
+  * {
+    border-color: hsl(var(--border));
+  }
+  body {
+    background-color: #030508;
+    color: hsl(var(--foreground));
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-card/60 backdrop-blur-xl border border-primary/20 shadow-[0_0_15px_rgba(0,240,255,0.05)];
+  }
+  
+  .neon-text {
+    @apply text-primary drop-shadow-[0_0_8px_rgba(0,240,255,0.6)];
+  }
+  
+  .neon-border {
+    @apply border border-primary/50 shadow-[0_0_10px_rgba(0,240,255,0.3),inset_0_0_10px_rgba(0,240,255,0.1)];
+  }
+}
+
+.northern-lights {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -1;
+  background: 
+    radial-gradient(circle at 15% 50%, rgba(0, 240, 255, 0.08), transparent 50%),
+    radial-gradient(circle at 85% 30%, rgba(138, 43, 226, 0.08), transparent 50%),
+    radial-gradient(circle at 50% 80%, rgba(0, 240, 255, 0.05), transparent 50%);
+  background-size: 200% 200%;
+  animation: aurora 15s ease infinite alternate;
+  pointer-events: none;
+}
+
+@keyframes aurora {
+  0% { background-position: 0% 0%; }
+  50% { background-position: 100% 100%; }
+  100% { background-position: 0% 100%; }
+}
