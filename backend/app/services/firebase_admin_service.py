@@ -29,6 +29,21 @@ def _init():
     from firebase_admin import credentials
 
     # ── Priority 1: JSON string from environment variable (cloud deployment) ──
+    # 1. Try Base64 encoded JSON first (most robust against formatting issues)
+    env_b64 = os.getenv("FIREBASE_ADMIN_BASE64", "").strip()
+    if env_b64:
+        import base64
+        try:
+            decoded = base64.b64decode(env_b64).decode("utf-8")
+            data = json.loads(decoded)
+            cred = credentials.Certificate(data)
+            _app = firebase_admin.initialize_app(cred)
+            logger.info(f"[Firebase] Admin SDK initialized from BASE64 env var — project: {data.get('project_id')}")
+            return
+        except Exception as e:
+            raise ValueError(f"FIREBASE_ADMIN_BASE64 is invalid: {e}")
+
+    # 2. Fallback to raw JSON string
     env_json = os.getenv("FIREBASE_ADMIN_JSON", "").strip()
     if env_json:
         try:
@@ -36,10 +51,6 @@ def _init():
             if data.get("project_id", "").startswith("YOUR_"):
                 raise ValueError("FIREBASE_ADMIN_JSON contains placeholder values.")
 
-            # ── Fix double-escaped newlines in the private key ────────────────
-            # When the JSON is typed character-by-character into a UI (e.g. Render),
-            # `\n` escape sequences can become literal `\\n` (two chars: backslash+n).
-            # Firebase's PEM loader requires actual newline characters, not escape text.
             if "private_key" in data:
                 data["private_key"] = data["private_key"].replace("\\n", "\n")
 
