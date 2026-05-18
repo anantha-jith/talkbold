@@ -105,7 +105,7 @@ export function Sidebar() {
       )}
 
       {/* Nav links */}
-      <div className="flex-1 py-4 px-4 space-y-1 overflow-y-auto">
+      <div className="flex-1 min-h-0 py-4 px-4 space-y-1 overflow-y-auto">
         {/* Admin section header */}
         {isAdmin && (
           <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 px-4 pt-1 pb-2">

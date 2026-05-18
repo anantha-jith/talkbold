@@ -5,29 +5,63 @@ Models are loaded on first use (not at import time) to stay within
 the 512MB RAM limit of Render's free tier.
 """
 
-from pptx import Presentation
-
-# ── All Heavy ML dependencies removed to save memory ──────────────────────────
-# Vector DB and local embedding models have been completely eliminated.
-# Presentation context is now injected directly into the Gemini prompt.
-
+import zipfile
+import xml.etree.ElementTree as ET
+import re
 
 def extract_ppt_text(file_path):
-    presentation = Presentation(file_path)
+    """
+    Memory-safe PPTX extraction.
+    PPTX files are ZIP archives. We extract text directly from the XML
+    to prevent python-pptx from loading large embedded images into RAM and causing OOM.
+    """
     slides = []
-
-    for i, slide in enumerate(presentation.slides):
-        text = ""
-        for shape in slide.shapes:
-            if hasattr(shape, "text"):
-                text += shape.text + " "
-
-        slides.append({
-            "slide_number": i + 1,
-            "content": text.strip()
-        })
-
-    return slides
+    
+    try:
+        with zipfile.ZipFile(file_path, 'r') as z:
+            # Find all slide XML files
+            slide_files = [f for f in z.namelist() if f.startswith('ppt/slides/slide') and f.endswith('.xml')]
+            
+            # Sort by slide number: slide1.xml, slide2.xml, etc.
+            def get_slide_num(filename):
+                match = re.search(r'slide(\d+)\.xml', filename)
+                return int(match.group(1)) if match else 0
+                
+            slide_files.sort(key=get_slide_num)
+            
+            for i, slide_file in enumerate(slide_files):
+                xml_content = z.read(slide_file)
+                root = ET.fromstring(xml_content)
+                
+                # In DrawingML, text is inside <a:t> tags
+                ns = {'a': 'http://schemas.openxmlformats.org/drawingml/2006/main'}
+                
+                texts = []
+                for node in root.findall('.//a:t', ns):
+                    if node.text:
+                        texts.append(node.text)
+                        
+                slides.append({
+                    "slide_number": i + 1,
+                    "content": " ".join(texts).strip()
+                })
+                
+        return slides
+    except Exception as e:
+        print(f"[PPTX Extraction Warning] Fast extraction failed: {e}. Falling back to python-pptx.")
+        from pptx import Presentation
+        presentation = Presentation(file_path)
+        slides = []
+        for i, slide in enumerate(presentation.slides):
+            text = ""
+            for shape in slide.shapes:
+                if hasattr(shape, "text"):
+                    text += shape.text + " "
+            slides.append({
+                "slide_number": i + 1,
+                "content": text.strip()
+            })
+        return slides
 
 
 def assess_ppt_quality(slides):
