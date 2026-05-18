@@ -1,30 +1,35 @@
 """
 llm_service.py — LLM backend using Google Gemini API.
 
-Replaces Ollama (local-only) so the backend can be deployed to any cloud host.
-Model: gemini-1.5-flash (free tier: 15 req/min, 1M tokens/day)
+All heavy imports are lazy so the module is safe to import at startup
+without consuming memory — models initialize on first API call only.
 """
 
 import os
 import json
 import re
 
-import google.generativeai as genai
+# ── Lazy Gemini setup ──────────────────────────────────────────────────────────
+# Nothing loads at module import time. _get_model() initializes on first call.
+_model = None
 
-# ── Gemini setup ───────────────────────────────────────────────────────────────
-_GEMINI_KEY = os.getenv("GEMINI_API_KEY", "")
-if _GEMINI_KEY:
-    genai.configure(api_key=_GEMINI_KEY)
-
-_model = genai.GenerativeModel("gemini-1.5-flash")
+def _get_model():
+    global _model
+    if _model is None:
+        import google.generativeai as genai
+        key = os.getenv("GEMINI_API_KEY", "")
+        if not key:
+            raise RuntimeError("GEMINI_API_KEY environment variable is not set.")
+        genai.configure(api_key=key)
+        _model = genai.GenerativeModel("gemini-1.5-flash")
+    return _model
 
 
 def _gemini(prompt: str) -> str:
     """Send a single-turn prompt to Gemini and return the text response."""
-    if not _GEMINI_KEY:
-        return "Gemini Error: GEMINI_API_KEY environment variable is not set."
     try:
-        resp = _model.generate_content(prompt)
+        model = _get_model()
+        resp = model.generate_content(prompt)
         return resp.text.strip()
     except Exception as e:
         return f"Gemini Error: {str(e)}"
@@ -39,7 +44,6 @@ def analyze_presentation(topic, slides, script, context,
     """
     audio_metrics — pre-computed deterministic speech metrics.
     has_audio     — True only when the user actually recorded audio.
-    The LLM uses these for reasoning; it does NOT generate metrics itself.
     """
     if audio_metrics:
         metrics_lines = []
@@ -73,7 +77,7 @@ You MUST combine ALL available sources together for analysis.
 
 DO NOT analyze using only the script.
 DO NOT analyze using only the PPT.
-{'If audio transcription is provided, cross-check it against the script AND PPT.' if has_audio else 'IMPORTANT: The student submitted a TEXT SCRIPT ONLY — NO audio recording. Do NOT mention, reference, or evaluate audio transcription. Do NOT write any section about audio delivery. Only evaluate the written script and PPT content.'}
+{'If audio transcription is provided, cross-check it against the script AND PPT.' if has_audio else 'IMPORTANT: The student submitted a TEXT SCRIPT ONLY — NO audio recording. Do NOT mention, reference, or evaluate audio transcription. Only evaluate the written script and PPT content.'}
 
 You must cross-check:
 - whether the script actually matches the PPT
@@ -85,25 +89,21 @@ You must cross-check:
 --------------------------------------------------
 PRESENTATION TOPIC
 --------------------------------------------------
-
 {topic}
 
 --------------------------------------------------
 ASSIGNED SLIDES
 --------------------------------------------------
-
 {slides}
 
 --------------------------------------------------
 PRESENTATION SCRIPT
 --------------------------------------------------
-
 {script}
 
 --------------------------------------------------
 PPT CONTENT RETRIEVED USING RAG
 --------------------------------------------------
-
 {context}
 
 {audio_context}
@@ -113,45 +113,34 @@ PPT CONTENT RETRIEVED USING RAG
 CRITICAL EVALUATION RULES
 --------------------------------------------------
 
-You MUST STRICTLY validate the PPT itself.
-
-1. If PPT content is weak, blank, extremely short, generic, or insufficient: explicitly mention it.
-2. If PPT has only 1 slide or very few meaningful slides: mention that presentation quality is poor.
-3. If the script contains concepts NOT supported by PPT: mention presentation inconsistency.
-4. If the PPT contains important concepts that are NOT discussed in the script: explicitly mention missing explanations.
-5. If the student heavily depends only on script quality while PPT quality is poor: mention that the presentation lacks visual/conceptual support.
-6. CRITICAL DOMAIN ALIGNMENT CHECK:
-   - You MUST aggressively compare the core domain/topic of the PPT against the core domain/topic of the Script.
-   - If the PPT is about one topic (e.g., Compilers) and the Script is about a completely different topic (e.g., Operating Systems), you MUST loudly flag this as a critical failure.
-   - Tell the student: "The script does not align with the presentation."
-7. Evaluate: technical depth, conceptual correctness, confidence, clarity, structure, topic coverage, domain knowledge, practical implementation understanding.
-8. Viva questions MUST be generated using BOTH PPT concepts AND Script explanations.
-9. Questions must test: implementation understanding, conceptual knowledge, design decisions, edge cases, practical reasoning.
-10. If PPT appears copied/generated/too generic: mention it professionally.
-11. Never hallucinate concepts not found in either PPT or script.
+1. If PPT content is weak, blank, or insufficient: explicitly mention it.
+2. If PPT has only 1 slide or very few meaningful slides: mention poor quality.
+3. If the script contains concepts NOT supported by PPT: mention inconsistency.
+4. If the PPT contains important concepts NOT discussed in script: mention missing explanations.
+5. CRITICAL DOMAIN ALIGNMENT CHECK:
+   - If the PPT is about one topic and the Script is about a completely different topic, LOUDLY flag this.
+   - State clearly: "The script does not align with the presentation."
+6. Evaluate: technical depth, conceptual correctness, confidence, clarity, structure, topic coverage, domain knowledge.
+7. Viva questions MUST use BOTH PPT concepts AND Script explanations.
+8. Never hallucinate concepts not found in either PPT or script.
 
 --------------------------------------------------
 OUTPUT FORMAT — MANDATORY
 --------------------------------------------------
 
-You MUST use EXACTLY these section headers — copy them character for character with no changes.
-DO NOT use bold (**) for section headers.
-DO NOT number or prefix the headers.
+Use EXACTLY these section headers — copy them character for character.
 DO NOT write any text before the first section header.
-DO NOT combine sections.
-Separate sections with a blank line after each header.
 
 ### Presentation Analysis
-[Write your detailed analysis here. Use paragraphs separated by blank lines. Use bullet points with - for lists.]
+[detailed analysis — paragraphs with blank lines, bullet points with -]
 
 ### Missing Concepts
-[Use bullet points ( - ) to list missing concepts, one per line.]
+[bullet points with -]
 
 ### Suggestions
-[Use bullet points ( - ) to list actionable improvement suggestions, one per line.]
+[bullet points with -]
 
 ### Viva Questions
-[Write exactly 5 numbered questions — no preamble, no introduction]
 1. [question]
 2. [question]
 3. [question]
@@ -159,15 +148,7 @@ Separate sections with a blank line after each header.
 5. [question]
 
 ### Final Verdict
-[Write 2-3 sentences with final verdict and score out of 10. Example: Score: 7/10]
-
---------------------------------------------------
-IMPORTANT
---------------------------------------------------
-
-Your evaluation must feel like a strict real university viva — professional academic review with deep technical inspection.
-Avoid generic motivational feedback. Avoid shallow responses. Be highly analytical.
-Format your output beautifully using Markdown.
+[2-3 sentences. Example: Score: 7/10]
 """
     return _gemini(prompt)
 
@@ -175,42 +156,32 @@ Format your output beautifully using Markdown.
 # ── Viva chat ──────────────────────────────────────────────────────────────────
 
 def chat_viva(topic: str, message_history: list) -> str:
-    """
-    Multi-turn viva examiner. message_history is a list of
-    { role: 'user'|'assistant', content: str } dicts.
-    """
+    """Multi-turn viva examiner."""
     system_prompt = (
         f"You are an elite, strict, highly experienced university professor conducting "
         f"a formal viva voce examination on the topic: '{topic}'.\n\n"
-        "BEHAVIORAL RULES:\n"
-        "1. CHALLENGE ASSUMPTIONS: Do not just accept surface-level answers. "
-        "If the student gives a textbook definition, challenge them with an edge case or a real-world scenario.\n"
-        "2. ADAPT CONTEXTUALLY: Your next question MUST be a direct follow-up to the student's previous answer. "
-        "Drill deeper into what they just said.\n"
-        "3. CORRECT MISTAKES AGGRESSIVELY: If the student says something factually incorrect, incomplete, or vague, "
-        "you MUST correct them immediately before moving on.\n"
-        "4. SOCRATIC METHOD: If a student struggles, give a tiny hint, then ask them to try again.\n"
-        "5. TONE: Intimidatingly smart, professional, academically formal, highly analytical. "
-        "Never use emojis. Never say 'Great job!' unless truly exceptional.\n"
-        "6. CONCISENESS: Keep your responses to a maximum of 4 sentences. Be direct and piercing.\n"
-        "7. FLOW: Every single response you give MUST end with exactly one question."
+        "RULES:\n"
+        "1. Challenge every surface-level answer with edge cases or real-world scenarios.\n"
+        "2. Your next question MUST directly follow up on the student's previous answer.\n"
+        "3. Correct mistakes aggressively and immediately.\n"
+        "4. Never be overly friendly. Never use emojis.\n"
+        "5. Keep responses to maximum 4 sentences.\n"
+        "6. Every response MUST end with exactly one question."
     )
 
-    # Build Gemini chat history
     history = []
     for msg in message_history:
         role = "user" if msg["role"] == "user" else "model"
         history.append({"role": role, "parts": [msg["content"]]})
 
-    # Prepend system context as first user message if history is empty
     if not history:
         history = [{"role": "user", "parts": [system_prompt + "\n\nBegin the viva."]}]
     else:
-        # Inject system prompt into first user message
         history[0]["parts"][0] = system_prompt + "\n\n" + history[0]["parts"][0]
 
     try:
-        chat = _model.start_chat(history=history[:-1] if len(history) > 1 else [])
+        model = _get_model()
+        chat = model.start_chat(history=history[:-1] if len(history) > 1 else [])
         last_msg = history[-1]["parts"][0] if history else "Begin."
         resp = chat.send_message(last_msg)
         return resp.text.strip()
@@ -221,10 +192,7 @@ def chat_viva(topic: str, message_history: list) -> str:
 # ── Viva evaluation ────────────────────────────────────────────────────────────
 
 def evaluate_viva(topic: str, message_history: list) -> str:
-    """
-    Evaluate the full viva transcript and return JSON:
-    { "score": int, "analysis": str }
-    """
+    """Evaluate the full viva transcript. Returns JSON: { score, analysis }"""
     transcript = "\n".join(
         f"{m['role'].capitalize()}: {m['content']}"
         for m in message_history
@@ -233,22 +201,19 @@ def evaluate_viva(topic: str, message_history: list) -> str:
 
     prompt = f"""You are an elite AI viva examiner.
 You have just concluded a viva on the topic: '{topic}'.
-Below is the transcript of the viva session.
-
+Transcript:
 {transcript}
 
-Please evaluate the student's performance based on their answers. Focus on technical correctness, clarity, and depth of knowledge shown in their responses.
-You must output ONLY a valid JSON object with the following structure (no markdown fences, no extra text):
+Output ONLY valid JSON (no markdown fences, no extra text):
 {{
-  "score": <an integer between 0 and 100 representing the Viva Readiness Score>,
-  "analysis": "<A detailed 2-3 paragraph string evaluating their strengths, weaknesses, and overall performance.>"
+  "score": <integer 0-100>,
+  "analysis": "<2-3 paragraph evaluation string>"
 }}"""
 
     try:
         result = _gemini(prompt)
-        # Strip any markdown code fences if model adds them
         result = re.sub(r"```json\s*|\s*```", "", result).strip()
-        json.loads(result)   # validate — raises if not valid JSON
+        json.loads(result)
         return result
     except Exception as e:
         return json.dumps({"score": 0, "analysis": f"Evaluation error: {str(e)}"})
@@ -257,10 +222,7 @@ You must output ONLY a valid JSON object with the following structure (no markdo
 # ── Topic auto-detection ───────────────────────────────────────────────────────
 
 def auto_detect_topic(slides_text: str) -> str:
-    """
-    Analyzes the extracted PPT text to determine the core topic.
-    Returns a short string (e.g., "Compiler Design", "Distributed Systems").
-    """
+    """Detect the core topic from extracted PPT text."""
     if not slides_text or not slides_text.strip():
         return "Unknown Topic"
 
@@ -268,11 +230,8 @@ def auto_detect_topic(slides_text: str) -> str:
     fallback_topic = lines[0][:60] if lines else "Unknown Topic"
 
     prompt = (
-        "You are an AI assistant.\n"
         "Based on the following text extracted from a presentation, identify the core academic or technical topic.\n"
-        "Return ONLY the topic name. Keep it concise (1 to 5 words maximum). "
-        "Do not include any punctuation, explanation or conversational filler.\n"
-        "If you cannot determine a topic, return the most prominent heading or term you see.\n\n"
+        "Return ONLY the topic name (1-5 words, no punctuation, no explanation).\n\n"
         f"Extracted Text:\n{slides_text[:3000]}"
     )
 
@@ -283,8 +242,6 @@ def auto_detect_topic(slides_text: str) -> str:
             r'^(Topic:|The topic is|Based on|The presentation is about)\s*',
             '', topic, flags=re.IGNORECASE
         ).strip()
-        if not topic or len(topic) > 80:
-            return fallback_topic
-        return topic
+        return topic if topic and len(topic) <= 80 else fallback_topic
     except Exception:
         return fallback_topic

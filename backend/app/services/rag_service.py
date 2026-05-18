@@ -1,11 +1,33 @@
+"""
+rag_service.py — Lazy-loading RAG service for cloud deployment.
+
+Models are loaded on first use (not at import time) to stay within
+the 512MB RAM limit of Render's free tier.
+"""
+
 from pptx import Presentation
-from sentence_transformers import SentenceTransformer
-import chromadb
 
-model = SentenceTransformer("all-MiniLM-L6-v2")
+# ── Lazy globals (loaded on first use) ────────────────────────────────────────
+_model = None
+_client = None
+_collection = None
 
-client = chromadb.Client()
-collection = client.get_or_create_collection("slides")
+
+def _get_model():
+    global _model
+    if _model is None:
+        from sentence_transformers import SentenceTransformer
+        _model = SentenceTransformer("all-MiniLM-L6-v2")
+    return _model
+
+
+def _get_collection():
+    global _client, _collection
+    if _collection is None:
+        import chromadb
+        _client = chromadb.Client()
+        _collection = _client.get_or_create_collection("slides")
+    return _collection
 
 
 def extract_ppt_text(file_path):
@@ -82,6 +104,9 @@ def store_embeddings(session_id, slides):
     if not meaningful:
         return  # nothing to store
 
+    model = _get_model()
+    collection = _get_collection()
+
     docs = [s["content"] for s in meaningful]
     ids = [f"{session_id}_{i}" for i in range(len(meaningful))]
 
@@ -95,6 +120,9 @@ def store_embeddings(session_id, slides):
 
 
 def retrieve_relevant(query):
+    model = _get_model()
+    collection = _get_collection()
+
     query_embedding = model.encode([query]).tolist()
 
     try:

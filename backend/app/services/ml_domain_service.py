@@ -1,5 +1,5 @@
-from sentence_transformers import SentenceTransformer, util
 import os
+
 
 # Load model lazily to save startup time
 _model = None
@@ -7,8 +7,7 @@ _model = None
 def get_model():
     global _model
     if _model is None:
-        # Reverting to all-MiniLM-L6-v2 for instant speed (already downloaded).
-        # We will use stricter thresholds to ensure accuracy without the download delay.
+        from sentence_transformers import SentenceTransformer
         _model = SentenceTransformer('all-MiniLM-L6-v2')
     return _model
 
@@ -19,7 +18,8 @@ def check_domain_alignment(topic: str, script: str, ppt_context: str):
     is inputting a script completely unrelated to the PPT.
     """
     model = get_model()
-    
+    from sentence_transformers import util
+
     # We take a sample of the script and ppt to speed up embedding and avoid token limits
     script_sample = script[:2000] if script else ""
     ppt_sample = ppt_context[:2000] if ppt_context else ""
