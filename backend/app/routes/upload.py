@@ -39,11 +39,12 @@ async def upload_file(file: UploadFile = File(...), user: dict = Depends(get_cur
 
     # Auto-detect topic from the extracted text
     full_text = " ".join([s["content"] for s in slides])
-    detected_topic = auto_detect_topic(full_text) if quality["has_content"] else "Unknown Topic"
+    
+    # INJECT the text into quality so the frontend sends it back to us!
+    # This completely eliminates the need for ChromaDB / local memory storage.
+    quality["extracted_text"] = full_text
 
-    # Only store embeddings if there is meaningful content to avoid polluting the vector store
-    if quality["has_content"]:
-        store_embeddings(session_id, slides)
+    detected_topic = auto_detect_topic(full_text) if quality["has_content"] else "Unknown Topic"
 
     return {
         "session_id": session_id,

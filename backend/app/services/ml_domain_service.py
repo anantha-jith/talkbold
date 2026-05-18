@@ -1,24 +1,16 @@
 import os
 
-
-# Load model lazily to save startup time
-_model = None
-
-def get_model():
-    global _model
-    if _model is None:
-        from sentence_transformers import SentenceTransformer
-        _model = SentenceTransformer('all-MiniLM-L6-v2')
-    return _model
+import math
 
 def check_domain_alignment(topic: str, script: str, ppt_context: str):
     """
     Returns a dictionary of alignment warnings based on cosine similarity
-    between the inputs. Uses an ML embedding model to detect if the user
+    between the inputs. Uses Gemini API to detect if the user
     is inputting a script completely unrelated to the PPT.
     """
-    model = get_model()
-    from sentence_transformers import util
+    import google.generativeai as genai
+    import os
+    genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 
     # We take a sample of the script and ppt to speed up embedding and avoid token limits
     script_sample = script[:2000] if script else ""
@@ -27,19 +19,35 @@ def check_domain_alignment(topic: str, script: str, ppt_context: str):
     if not script_sample or not ppt_sample:
         return {"error": "Missing script or PPT content to compare"}
 
-    # Compute embeddings
-    embeddings = model.encode([topic, script_sample, ppt_sample], convert_to_tensor=True)
-    
-    topic_emb = embeddings[0]
-    script_emb = embeddings[1]
-    ppt_emb = embeddings[2]
-    
-    # Calculate Cosine Similarities
-    # 1. How well does the script match the PPT?
-    script_ppt_sim = util.pytorch_cos_sim(script_emb, ppt_emb).item()
-    
-    # 2. How well does the topic match the PPT?
-    topic_ppt_sim = util.pytorch_cos_sim(topic_emb, ppt_emb).item()
+    def cosine_similarity(v1, v2):
+        dot_product = sum(a * b for a, b in zip(v1, v2))
+        magnitude_v1 = math.sqrt(sum(a * a for a in v1))
+        magnitude_v2 = math.sqrt(sum(b * b for b in v2))
+        if magnitude_v1 == 0 or magnitude_v2 == 0:
+            return 0.0
+        return dot_product / (magnitude_v1 * magnitude_v2)
+
+    try:
+        # Compute embeddings via Gemini API (uses zero local memory)
+        response = genai.embed_content(
+            model="models/text-embedding-004",
+            content=[topic, script_sample, ppt_sample]
+        )
+        
+        embeddings = response["embedding"]
+        topic_emb = embeddings[0]
+        script_emb = embeddings[1]
+        ppt_emb = embeddings[2]
+        
+        # Calculate Cosine Similarities
+        # 1. How well does the script match the PPT?
+        script_ppt_sim = cosine_similarity(script_emb, ppt_emb)
+        
+        # 2. How well does the topic match the PPT?
+        topic_ppt_sim = cosine_similarity(topic_emb, ppt_emb)
+    except Exception as e:
+        print(f"[ML Domain Check Error] {e}")
+        return {}
 
     warnings = []
     

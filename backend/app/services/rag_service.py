@@ -7,27 +7,9 @@ the 512MB RAM limit of Render's free tier.
 
 from pptx import Presentation
 
-# ── Lazy globals (loaded on first use) ────────────────────────────────────────
-_model = None
-_client = None
-_collection = None
-
-
-def _get_model():
-    global _model
-    if _model is None:
-        from sentence_transformers import SentenceTransformer
-        _model = SentenceTransformer("all-MiniLM-L6-v2")
-    return _model
-
-
-def _get_collection():
-    global _client, _collection
-    if _collection is None:
-        import chromadb
-        _client = chromadb.Client()
-        _collection = _client.get_or_create_collection("slides")
-    return _collection
+# ── All Heavy ML dependencies removed to save memory ──────────────────────────
+# Vector DB and local embedding models have been completely eliminated.
+# Presentation context is now injected directly into the Gemini prompt.
 
 
 def extract_ppt_text(file_path):
@@ -98,40 +80,10 @@ def assess_ppt_quality(slides):
 
 
 def store_embeddings(session_id, slides):
-    # Filter out blank slides before storing so the vector store stays clean
-    meaningful = [s for s in slides if len(s["content"].strip()) >= 5]
-
-    if not meaningful:
-        return  # nothing to store
-
-    model = _get_model()
-    collection = _get_collection()
-
-    docs = [s["content"] for s in meaningful]
-    ids = [f"{session_id}_{i}" for i in range(len(meaningful))]
-
-    embeddings = model.encode(docs).tolist()
-
-    collection.add(
-        documents=docs,
-        embeddings=embeddings,
-        ids=ids
-    )
-
+    # DEPRECATED: We no longer store embeddings in ChromaDB to save memory.
+    # Text is now injected directly into the ppt_quality dict.
+    pass
 
 def retrieve_relevant(query):
-    model = _get_model()
-    collection = _get_collection()
-
-    query_embedding = model.encode([query]).tolist()
-
-    try:
-        results = collection.query(
-            query_embeddings=query_embedding,
-            n_results=3
-        )
-        docs = results["documents"][0]
-        # Filter out empty strings returned from blank-slide collections
-        return [d for d in docs if d.strip()] or ["[No relevant PPT content found]"]
-    except Exception:
-        return ["[No PPT content available — the uploaded file may have been blank]"]
+    # DEPRECATED: RAG is now handled by passing the full PPT text to Gemini.
+    return ["[No relevant PPT content found]"]

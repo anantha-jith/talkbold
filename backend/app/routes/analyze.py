@@ -23,9 +23,10 @@ class AnalyzeRequest(BaseModel):
 @router.post("/")
 def analyze(data: AnalyzeRequest):
 
-    # Retrieve RAG context
-    context_docs = retrieve_relevant(data.script)
-    context = "\n".join(context_docs) if isinstance(context_docs, list) else str(context_docs)
+    # We now get the context directly from the injected field
+    context = ""
+    if data.ppt_quality:
+        context = data.ppt_quality.get("extracted_text", "")
 
     # Build PPT quality warning
     ppt_warning = ""
