@@ -3,16 +3,17 @@ services:
     name: talkbold-backend
     env: python
     rootDir: backend
+    pythonVersion: "3.11.9"
     buildCommand: "pip install -r requirements.txt"
     startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: PYTHON_VERSION
-        value: "3.10.0"
+        value: "3.11.9"
       - key: MONGO_URI
-        sync: false          # Set in Render dashboard → MongoDB Atlas URI
+        sync: false
       - key: GEMINI_API_KEY
-        sync: false          # Set in Render dashboard → your Gemini API key
+        sync: false
       - key: SECRET_KEY
-        sync: false          # Set in Render dashboard → any long random string
+        sync: false
       - key: FIREBASE_ADMIN_JSON
-        sync: false          # Set in Render dashboard → paste contents of firebase-admin.json
+        sync: false
