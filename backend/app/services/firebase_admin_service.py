@@ -35,6 +35,14 @@ def _init():
             data = json.loads(env_json)
             if data.get("project_id", "").startswith("YOUR_"):
                 raise ValueError("FIREBASE_ADMIN_JSON contains placeholder values.")
+
+            # ── Fix double-escaped newlines in the private key ────────────────
+            # When the JSON is typed character-by-character into a UI (e.g. Render),
+            # `\n` escape sequences can become literal `\\n` (two chars: backslash+n).
+            # Firebase's PEM loader requires actual newline characters, not escape text.
+            if "private_key" in data:
+                data["private_key"] = data["private_key"].replace("\\n", "\n")
+
             cred  = credentials.Certificate(data)
             _app  = firebase_admin.initialize_app(cred)
             logger.info(f"[Firebase] Admin SDK initialized from env var — project: {data['project_id']}")
